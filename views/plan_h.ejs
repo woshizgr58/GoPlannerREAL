@@ -1,0 +1,245 @@
+<%- include("partials/header.ejs") %>
+
+<p>Starting Point: <%= start %></p>
+<p>Destination: <%= destination %></p>
+<p>Number of Nights: <%= nights %></p>
+
+<!-- <p>stops: <%=waypoints%></p> -->
+
+
+<button id="plan-button" class="buttons">Hide Hotels</button>
+
+
+<div id="waypoints-container"></div>
+
+<script>
+alert("The Hotel generator feature is still under construction. Accuracy of the hotels may vary. Sorry for the inconvinence.")
+var waypoints = '<%=formattedAddressString%>'.split("|,");
+waypoints.push('<%= destination %>')
+var stops = '<%=stops%>'
+console.log('waypoints',waypoints)
+console.log('stops',stops)
+console.log(typeof waypoints)
+console.log(typeof stops)
+
+
+
+waypoints.forEach((item) => {
+  console.log(item)
+});
+
+
+
+
+var destHotels = [];
+var s1 = []
+var s2 = []
+var s3 = []
+var s4 = []
+fetch('/dest_hotels.json')
+  .then(response => {
+    if (!response.ok) {
+      throw new Error('Network response was not ok ' + response.statusText);
+    }
+    return response.json();
+  })
+  .then(data => {
+    console.log('Fetched JSON data:', data);
+    data.forEach((item) => {
+        destHotels.push({ title: item["title"], link: item["link"] });
+    });
+  })
+  .catch(error => console.error('Error fetching JSON:', error));
+
+
+
+fetch('/s1.json')
+  .then(response => {
+    if (!response.ok) {
+      throw new Error('Network response was not ok ' + response.statusText);
+    }
+    console.log(response)
+    return response.json();
+  })
+  .then(data => {
+    console.log('Fetched JSON data:', data);
+    data.forEach((item) => {
+        s1.push({ title: item["title"], link: item["link"] });
+    });
+  })
+  .catch(error => console.error('Error fetching JSON:', error));
+
+  fetch('/s2.json')
+  .then(response => {
+    if (!response.ok) {
+      throw new Error('Network response was not ok ' + response.statusText);
+    }
+    console.log(response)
+    return response.json();
+  })
+  .then(data => {
+    console.log('Fetched JSON data:', data);
+    data.forEach((item) => {
+        s2.push({ title: item["title"], link: item["link"] });
+    });
+  })
+  .catch(error => console.error('Error fetching JSON:', error));
+
+  fetch('/s3.json')
+  .then(response => {
+    if (!response.ok) {
+      throw new Error('Network response was not ok ' + response.statusText);
+    }
+    return response.json();
+  })
+  .then(data => {
+    console.log('Fetched JSON data:', data);
+    data.forEach((item) => {
+        s3.push({ title: item["title"], link: item["link"] });
+    });
+  })
+  .catch(error => console.error('Error fetching JSON:', error));
+
+  fetch('/s4.json')
+  .then(response => {
+    if (!response.ok) {
+      throw new Error('Network response was not ok ' + response.statusText);
+    }
+    return response.json();
+  })
+  .then(data => {
+    console.log('Fetched JSON data:', data);
+    data.forEach((item) => {
+        s4.push({ title: item["title"], link: item["link"] });
+    });
+  })
+  .catch(error => console.error('Error fetching JSON:', error));
+
+  var waypointCont = document.getElementById("waypoints-container");
+let count = 1; // Initialize count outside the loop
+
+// Create an array to hold promises for each box creation
+let boxPromises = waypoints.map(async (location, index) => {
+    var imgURL = await getCityImages(location); // Await the image URL
+    let hotels = []; // Initialize an empty array for hotels
+
+    // Check if the current location is the destination
+    if (index === waypoints.length - 1) {
+        hotels = destHotels; // Assign destination hotels if it's the last waypoint
+    } else {
+        // Assign the correct hotels array based on the count for other waypoints
+        switch (count) {
+            case 1:
+                hotels = s1;
+                break;
+            case 2:
+                hotels = s2;
+                break;
+            case 3:
+                hotels = s3;
+                break;
+            case 4:
+                hotels = s4;
+                break;
+            default:
+                hotels = []; // Handle cases where count exceeds expected values
+        }
+        count++; // Increment count only for non-destination waypoints
+    }
+
+    return createBox(location, imgURL, hotels); // Return the box creation promise
+});
+
+// Wait for all boxes to be created, then append them in order
+Promise.all(boxPromises).then(boxes => {
+    boxes.forEach(box => {
+        waypointCont.appendChild(box); // Append each box in the order of the array
+    });
+});
+
+
+
+
+
+async function getCityImages(address) {
+    const geocodingApiKey = 'AIzaSyAyu7Y6HrA370GOW8pd1uXPGrRP9TY3HWA';
+    const unsplashAccessKey = '960PKlwKb0beYgRM9U6_5vIKtipJ6iQUlaRPkM4DGi8';
+    
+    // Step 1: Geocode the address
+    const geocodeUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${geocodingApiKey}`;
+    
+    let response = await fetch(geocodeUrl);
+    let data = await response.json();
+    
+    if (data.status !== 'OK') {
+        throw new Error('Geocoding failed');
+    }
+    
+    const location = data.results[0].geometry.location;
+    const lat = location.lat;
+    const lng = location.lng;
+    
+    // Step 2: Get city information
+    const city = data.results[0].address_components.find(component => component.types.includes('locality')).long_name;
+    
+    // Step 3: Fetch images from Unsplash
+    const unsplashUrl = `https://api.unsplash.com/search/photos?query=${encodeURIComponent(city)}&client_id=${unsplashAccessKey}`;
+    
+    response = await fetch(unsplashUrl);
+    data = await response.json();
+    
+    if (!data.results.length) {
+        console.error('No images found');
+        // Return an array with the fallback image URL
+        return ['/images/noimageavailable.png'];  // Use a relative path suitable for your web server
+    }
+    
+    // Return array of image URLs
+    return data.results.map(image => image.urls.small);
+}
+
+
+function createBox(content, imageUrl, hotels = []) {
+    var box = document.createElement("div");
+    box.className = "box";
+
+    // Ensure hotels is an array
+    if (!Array.isArray(hotels)) {
+        hotels = [];
+    }
+
+    var hotelsList = hotels.map(hotel => `<li><a href="${hotel.link}" target="_blank">${hotel.title}</a></li>`).join('');
+
+    box.innerHTML = `
+        <p>${content}</p>
+        <img src="${imageUrl}" alt="${content}" style="width: 50%; height: 50%;">
+        <p>Hotels:</p>
+        <ol>
+            ${hotelsList}
+        </ol>
+    `;
+    return box;
+}
+
+
+
+function buildPlanHUrl(start, destination, nights) {
+    return `/plan?start=${encodeURIComponent(start)}&destination=${encodeURIComponent(destination)}&nights=${encodeURIComponent(nights)}`;
+}
+
+document.getElementById('plan-button').addEventListener('click', function() {
+    var start = '<%= start %>';
+    var destination = '<%= destination %>';
+    var nights = '<%= nights %>';
+
+    var url = buildPlanHUrl(start, destination, nights);
+    window.location.href = url;
+});
+
+// Call the calculateRoute function when the script loads
+// window.onload = calculateRoute;
+</script>
+
+<script
+    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAyu7Y6HrA370GOW8pd1uXPGrRP9TY3HWA&loading=async&libraries=maps&v=beta" defer>
+</script>

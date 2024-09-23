@@ -1,0 +1,101 @@
+<%- include("partials/header.ejs") %>
+
+<div class="home-buttons">
+    <button class="show-popup buttons big-button" onclick="openForm()">Start Planning</button>
+</div>
+
+<div class="popup-cont">
+    <div class="popup-box">
+        <h2>Starting point:</h2>
+        <input id="start-point" class="autocomplete-class input" type="text" />
+        <h2>Destination:</h2>
+        <input id="destination" class="autocomplete-class input" type="text" />
+        <h2>Number of nights:</h2>
+        <input id="nights" class="input" placeholder="Enter a number" type="number" />
+        <div class="popup-btns">
+            <button id="submit-btn" class="submit-btn buttons">start planning</a>
+            <button class="buttons" onclick="window.location.reload();">back</button>
+        </div>
+    </div>
+</div>
+
+
+
+<script>
+    
+    document.addEventListener("DOMContentLoaded", () => {
+        const showPopup = document.querySelector(".show-popup");
+        const popupCont = document.querySelector(".popup-cont");
+
+        showPopup.onclick = () => {
+            popupCont.classList.add('active');
+            popupCont.classList.remove('deactive');
+            
+        };
+
+        const startPoint = document.getElementById("start-point");
+        const destination = document.getElementById("destination");
+        const nights = document.getElementById("nights");
+
+        const submitBtn = document.getElementById("submit-btn");
+
+        const checkInputs = () => {
+            if (startPoint.value && destination.value && nights.value) {
+                submitBtn.classList.add('active');
+                submitBtn.classList.remove('deactive');
+                
+            } else {
+                submitBtn.classList.add('deactive');
+                submitBtn.classList.remove('active');
+            }
+        };
+
+        startPoint.addEventListener("input", checkInputs);
+        destination.addEventListener("input", checkInputs);
+        nights.addEventListener("input", checkInputs);
+
+
+        const submit = document.querySelector(".submit-btn");
+
+        submit.onclick = () => {
+            const start = encodeURIComponent(startPoint.value);
+            const dest = encodeURIComponent(destination.value);
+            const nightCount = encodeURIComponent(nights.value);
+
+            window.location.href = `/plan?start=${start}&destination=${dest}&nights=${nightCount}`;
+            
+        }
+
+
+
+
+    });
+
+    function navigateToPage(url) {
+        window.location.href = url;
+  
+}
+
+    let autocomplete;
+
+    function initAutocomplete() {
+        const inputs = document.querySelectorAll('.autocomplete-class');
+        inputs.forEach(input => {
+            new google.maps.places.Autocomplete(input, {
+                componentRestrictions: { country: ["US"] },
+                fields: ['address_components', 'geometry']
+            });
+        });
+    }
+
+</script>
+
+<script async defer
+    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAyu7Y6HrA370GOW8pd1uXPGrRP9TY3HWA&libraries=places&callback=initAutocomplete">
+</script>
+
+<div class="home_img">
+    <img src="images/road1.jpg" alt="road" width="33%" >
+    <img src="images/road2.jpg" alt="road" width="33%" >
+    <img src="images/road3.jpg" alt="road" width="33%" >
+</div>

@@ -1,0 +1,306 @@
+<%- include("partials/header.ejs") %>
+
+<p>Starting Point: <%= start %></p>
+<p>Destination: <%= destination %></p>
+<p>Number of Nights: <%= nights %></p>
+
+
+<button id="plan-h-button" class="buttons">Show Hotels</button>
+
+
+
+<div id="map" style="height: 720px;"></div>
+
+<div id="waypoints-container"></div>
+
+
+<script>
+    var stops_global = '';
+    var stop_addys = [];
+    
+    function calculateRoute() {
+        // Initialize the directions service and renderer
+        var directionsService = new google.maps.DirectionsService();
+        var directionsRenderer = new google.maps.DirectionsRenderer();
+    
+        // Create the map
+        var map = new google.maps.Map(document.getElementById('map'), {
+            center: { lat: 39.8283, lng: -98.5795 },
+            zoom: 5
+        });
+    
+        // Bind the directions renderer to the map
+        directionsRenderer.setMap(map);
+    
+        // Prepare the request
+        var request = {
+            origin: "<%= start %>",
+            destination: "<%= destination %>",
+            travelMode: 'DRIVING'
+        };
+    
+        // Request directions
+        directionsService.route(request, function(result, status) {
+            if (status === 'OK') {
+                var start = result.routes[0].legs[0].start_location;
+                var end = result.routes[0].legs[result.routes[0].legs.length - 1].end_location;
+    
+                // Add waypoints
+                addWaypoints(start, end, '<%= nights %>', map, function(stops) {
+                    stops_global = stops;
+                    processStops(stops);
+                    updateRouteWithWaypoints(directionsService, directionsRenderer, stops);
+                    
+                    // Now that stop_addys is fully populated, we can sort the addresses
+                    sortAddressesByDistance(stop_addys, "<%= destination %>").then(sortedAddresses => {
+                        console.log('Sorted addresses (farthest to closest):', sortedAddresses);
+                        stop_addys = sortedAddresses
+                    });
+                });
+            } else {
+                console.error('Directions request failed due to ' + status);
+            }
+        });
+    }
+
+
+    
+    function calculateMidpoints(startLocation, endLocation, numSegments) {
+        const latDiff = (endLocation.lat() - startLocation.lat()) / numSegments;
+        const lngDiff = (endLocation.lng() - startLocation.lng()) / numSegments;
+    
+        const midpoints = [];
+    
+        for (let i = 1; i <= numSegments; i++) {
+            const midpoint = {
+                lat: startLocation.lat() + latDiff * i,
+                lng: startLocation.lng() + lngDiff * i,
+            };
+            midpoints.push(midpoint);
+        }
+    
+        return midpoints;
+    }
+    
+    function findClosestCity(midpoint, callback) {
+        const geocoder = new google.maps.Geocoder();
+        geocoder.geocode({ location: midpoint }, function(results, status) {
+            if (status === google.maps.GeocoderStatus.OK && results.length > 0) {
+                // Assuming first result is the closest town or city
+                callback(results[0].geometry.location, results[0].formatted_address);
+            } else {
+                console.error('Geocode was not successful for the following reason:', status);
+            }
+        });
+    }
+    
+    function addWaypoints(startLocation, endLocation, nights, map, callback) {
+        const numSegments = parseInt(nights) + 1;
+        const midpoints = calculateMidpoints(startLocation, endLocation, numSegments);
+        const stops = [];
+
+        const minimumDistance = 50000; // Minimum distance in meters (50 km)
+
+        let promises = midpoints.map((midpoint, index) => {
+            return new Promise((resolve, reject) => {
+                findClosestCity(midpoint, async function(closestLocation, address) {
+                    const destinationCoords = await getLatLng("<%= destination %>");
+                    const stopDistance = calculateDistance(closestLocation.lat(), closestLocation.lng(), destinationCoords.lat, destinationCoords.lng);
+
+                    if (stopDistance > minimumDistance) { // Only add stops that are far enough from the destination
+                        stops.push({
+                            location: closestLocation,
+                            stopover: true
+                        });
+                        new google.maps.Marker({
+                            position: closestLocation,
+                            map: map,
+                            label: `Stop ${index + 1} (${address})`
+                        });
+
+                        stop_addys.push(address);
+                    }
+                    resolve();
+                });
+            });
+        });
+
+        Promise.all(promises).then(() => {
+            callback(stops);
+        });
+    }
+
+
+
+    
+    function processStops(stops) {
+        var waypointCont = document.getElementById("waypoints-container");
+        var start = '<%= start %>';
+        var dest = '<%= destination %>';
+        (async () => {
+            var startPic = await getCityImages(start);
+            waypointCont.appendChild(createBox(`Departing from: ${start}`, startPic[0]));
+    
+            for (var i = 0; i < stops.length; i++) {
+                var loc = stops[i].location;
+                var address = stop_addys[i];
+                var stopPic = await getCityImages(address);
+                waypointCont.appendChild(createBox(`Stop ${i + 1}: ${address}`, stopPic[0]));
+            }
+    
+            var destPic = await getCityImages(dest);
+            waypointCont.appendChild(createBox(`Destination: ${dest}`, destPic[0]));
+        })();
+    }
+    
+    function updateRouteWithWaypoints(directionsService, directionsRenderer, stops) {
+    console.log("Waypoints in request:", stops.map(stop => stop.location));
+
+
+
+    var waypointRequest = {
+        origin: "<%= start %>",
+        destination: "<%= destination %>",
+        waypoints: stops,
+        optimizeWaypoints: false, // Set this to false to preserve the order of stops
+        travelMode: 'DRIVING'
+    };
+
+    directionsService.route(waypointRequest, function(result, status) {
+        if (status === 'OK') {
+            directionsRenderer.setDirections(result);
+        } else {
+            console.error('Directions request failed due to ' + status);
+        }
+    });
+}
+
+    
+async function getCityImages(address) {
+    const geocodingApiKey = 'AIzaSyAyu7Y6HrA370GOW8pd1uXPGrRP9TY3HWA';
+    const unsplashAccessKey = '960PKlwKb0beYgRM9U6_5vIKtipJ6iQUlaRPkM4DGi8';
+    
+    // Step 1: Geocode the address
+    const geocodeUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${geocodingApiKey}`;
+    
+    let response = await fetch(geocodeUrl);
+    let data = await response.json();
+    
+    if (data.status !== 'OK') {
+        throw new Error('Geocoding failed');
+    }
+    
+    const location = data.results[0].geometry.location;
+    const lat = location.lat;
+    const lng = location.lng;
+    
+    // Step 2: Get city information
+    const city = data.results[0].address_components.find(component => component.types.includes('locality')).long_name;
+    
+    // Step 3: Fetch images from Unsplash
+    const unsplashUrl = `https://api.unsplash.com/search/photos?query=${encodeURIComponent(city)}&client_id=${unsplashAccessKey}`;
+    
+    response = await fetch(unsplashUrl);
+    data = await response.json();
+    
+    if (!data.results.length) {
+        console.error('No images found');
+        // Return an array with the fallback image URL
+        return ['/images/noimageavailable.png'];  // Use a relative path suitable for your web server
+    }
+    
+    // Return array of image URLs
+    return data.results.map(image => image.urls.small);
+}
+
+    
+    function createBox(content, imageUrl) {
+        var box = document.createElement("div");
+        box.className = "box";
+    
+        box.innerHTML = `
+            <p>${content}</p>
+            <img src="${imageUrl}" alt="${content}" style="width: 50%; height: 50%;">
+        `;
+        return box;
+    }
+    
+    function buildPlanHUrl(start, destination, nights) {
+        return `/plan_h?start=${encodeURIComponent(start)}&destination=${encodeURIComponent(destination)}&nights=${encodeURIComponent(nights)}&stops=${stop_addys}`;
+    }
+    
+    document.getElementById('plan-h-button').addEventListener('click', function() {
+        var start = '<%= start %>';
+        var destination = '<%= destination %>';
+        var nights = '<%= nights %>';
+
+        var url = buildPlanHUrl(start, destination, nights);
+        window.location.href = url;
+    });
+
+
+    function calculateDistance(lat1, lon1, lat2, lon2) {
+    const R = 6371e3; // Earth's radius in meters
+    const phi1 = lat1 * Math.PI / 180;
+    const phi2 = lat2 * Math.PI / 180;
+    const deltaPhi = (lat2 - lat1) * Math.PI / 180;
+    const deltaLambda = (lon2 - lon1) * Math.PI / 180;
+
+    const a = Math.sin(deltaPhi / 2) * Math.sin(deltaPhi / 2) +
+              Math.cos(phi1) * Math.cos(phi2) *
+              Math.sin(deltaLambda / 2) * Math.sin(deltaLambda / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+    return R * c;
+}
+
+// Function to get the latitude and longitude of an address
+async function getLatLng(address) {
+    const geocodingApiKey = 'AIzaSyAyu7Y6HrA370GOW8pd1uXPGrRP9TY3HWA'; // Replace with your API key
+    const geocodeUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${geocodingApiKey}`;
+
+    let response = await fetch(geocodeUrl);
+    let data = await response.json();
+
+    if (data.status === 'OK') {
+        const location = data.results[0].geometry.location;
+        return { lat: location.lat, lng: location.lng };
+    } else {
+        throw new Error('Geocoding failed');
+    }
+}
+
+// Function to sort addresses based on their distance from the destination
+async function sortAddressesByDistance(addresses, destination) {
+    try {
+        // Get destination coordinates
+        const destinationCoords = await getLatLng(destination);
+
+        // Create an array of promises to get lat/lng for each address
+        const addressPromises = addresses.map(async (address) => {
+            const coords = await getLatLng(address);
+            const distance = calculateDistance(coords.lat, coords.lng, destinationCoords.lat, destinationCoords.lng);
+            return { address, distance };
+        });
+
+        // Wait for all promises to resolve
+        const addressDistances = await Promise.all(addressPromises);
+
+        // Sort addresses by distance, from farthest to closest
+        addressDistances.sort((a, b) => b.distance - a.distance);
+
+        // Extract sorted addresses
+        return addressDistances.map(ad => ad.address);
+    } catch (error) {
+        console.error('Error sorting addresses by distance:', error);
+        return [];
+    }
+}
+    // Call the calculateRoute function when the script loads
+    window.onload = calculateRoute;
+    </script>
+    
+
+<script
+    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAyu7Y6HrA370GOW8pd1uXPGrRP9TY3HWA&libraries=maps&v=3.44" defer>
+</script>
